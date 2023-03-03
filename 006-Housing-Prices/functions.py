@@ -15,3 +15,82 @@ def unistats(df):
                                   df[col].dtype, pd.api.types.is_numeric_dtype(df[col]), df[col].mode().values[0],
                                   '-', '-', '-', '-', '-', '-', '-', '-', '-']
     return output_df.sort_values(by=['Numeric', "Skew", 'Unique'], ascending=False)
+
+
+def avnova(df, feature, label):
+    import pandas as pd
+    import numpy as np
+    from scipy import stats
+
+    groups = df[feature].unique()
+    df_grouped = df.groupby(feature)
+    group_labels = []
+    for g in groups:
+        g_list = df_grouped.get_group(g)
+        group_labels.append(g_list[label])
+
+    return stats.f_oneway(*group_labels)
+
+def heteroscedasticity(df, feature, label):
+    from statsmodels.stats.diagnostic import het_breuschpagan
+    from statsmodels.stats.diagnostic import het_white
+    import pandas as pd
+    import statsmodels.api as sm
+    from statsmodels.formula.api import ols
+
+    model = ols(formula=(label + '~' + feature), data=df).fit()
+
+    white_test = het_white(model.resid, model.model.exog)
+    bp_test = het_breuschpagan(model.resid, model.model.exog)
+
+    output_df = pd.DataFrame(columns=['LM stat', 'LM p-value', 'F-stat', 'F p-value'])
+    output_df.loc['white'] = white_test
+    output_df.loc['Breusch-Pagan'] = bp_test
+
+    return output_df.round(3)
+
+
+def scatter(feature, label):
+    import seaborn as sns
+    from scipy import stats
+    import matplotlib.pyplot as plt
+    import pandas as pd
+
+    ## Calculate the regression line
+    m, b, r, p, err = stats.linregress(feature, label)
+
+    textstr = 'y = ' + str(round(m, 2)) + 'x + ' + str(round(b, 2)) + '\n'
+    textstr += 'r2 = ' + str(round(r ** 2, 2)) + '\n'
+    textstr += 'p = ' + str(round(p, 2)) + '\n'
+    textstr += str(feature.name) + ' skew = ' + str(round(feature.skew(), 2)) + '\n'
+    textstr += str(label.name) + ' skew = ' + str(round(label.skew(), 2)) + '\n'
+    textstr += str(heteroscedasticity(pd.DataFrame(label).join(pd.DataFrame(feature)), feature.name, label.name))
+
+    sns.set(color_codes=True)
+    ax = sns.jointplot(x=feature, y=label, kind='reg')
+    ax.fig.text(1, 0.114, textstr, fontsize=12, transform=plt.gcf().transFigure)
+
+
+def bivstats(df, label):
+    from scipy import stats
+    import pandas as pd
+    import numpy as np
+
+    ## Create an empty DataFrame to store output
+    output_df = pd.DataFrame(columns=['Stat', '+/-', 'Effect size', 'p-value'])
+
+    for col in df:
+        if not col == label:
+            if df[col].isnull().sum() == 0:
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    r, p = stats.pearsonr(df[label], df[col])
+                    output_df.loc[col] = ['r', np.sign(r), abs(round(r, 3)), round(p, 6)]
+                else:
+                    F, p = avnova(df[[col, label]], col, label)
+                    output_df.loc[col] = ['F', '', round(F, 3), round(p, 6)]
+            else:
+                output_df.loc[col] = [np.nan, np.nan, np.nan, 'nulls']
+
+    return output_df.sort_values(by=['Stat', 'Effect size'], ascending=[False, False])
+
+
