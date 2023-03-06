@@ -44,8 +44,8 @@ def heteroscedasticity(df, feature, label):
     bp_test = het_breuschpagan(model.resid, model.model.exog)
 
     output_df = pd.DataFrame(columns=['LM stat', 'LM p-value', 'F-stat', 'F p-value'])
-    output_df.loc['white'] = white_test
-    output_df.loc['Breusch-Pagan'] = bp_test
+    output_df.loc['White'] = white_test
+    output_df.loc['Br-Pa'] = bp_test
 
     return output_df.round(3)
 
@@ -69,7 +69,56 @@ def scatter(feature, label):
     sns.set(color_codes=True)
     ax = sns.jointplot(x=feature, y=label, kind='reg')
     ax.fig.text(1, 0.114, textstr, fontsize=12, transform=plt.gcf().transFigure)
+    plt.show()
 
+
+def bar_chart(df, feature, label):
+    import pandas as pd
+    from scipy import stats
+    from matplotlib import pyplot as plt
+    import seaborn as sns
+
+    groups = df[feature].unique()
+    df_grouped = df.groupby(feature)
+    group_labels = []
+    for g in groups:
+        g_list = df_grouped.get_group(g)
+        group_labels.append(g_list[label])
+
+    oneway = stats.f_oneway(*group_labels)
+
+    unique_groups = df[feature].unique()
+    ttests = []
+
+    for i, group in enumerate(unique_groups):
+        for i2, group_2 in enumerate(unique_groups):
+            if i2 > i:
+                type_1 = df[df[feature] == group]
+                type_2 = df[df[feature] == group_2]
+
+                if len(type_1[label]) < 2 or len(type_2[label]) < 2:
+                    print("'" + group + "' n = " + str(len(type_1)) + "; '" + group_2 + '; n = ' + str(len(type_2)) + '; no t-test performed')
+                else:
+                    t, p = stats.ttest_ind(type_1[label], type_2[label])
+                    ttests.append([group, group_2, t.round(4), p.round(4)])
+
+    if len(ttests) > 0:
+        p_threshold = 0.05 / len(ttests)
+    else:
+        p_threshold = 0.05
+
+    textstr = '        ANOVA' + '\n'
+    textstr += 'F:            ' + str(oneway[0].round(2)) + '\n'
+    textstr += 'p-value:      ' + str(oneway[1].round(2)) + '\n\n'
+    textstr += 'Sig. comparisons (Bonferroni-corrected)' + '\n'
+
+    for ttest in ttests:
+        if ttest[3] <= p_threshold:
+            textstr += ttest[0] + '-' + ttest[1] + ": t=" + str(ttest[2]) + ", p=" + str(ttest[3]) + '\n'
+
+    ax = sns.barplot(x=df[feature], y=df[label])
+    ax.text(1, 0.1, textstr, fontsize=12, transform=plt.gcf().transFigure)
+    plt.show()
 
 def bivstats(df, label):
     from scipy import stats
@@ -85,9 +134,11 @@ def bivstats(df, label):
                 if pd.api.types.is_numeric_dtype(df[col]):
                     r, p = stats.pearsonr(df[label], df[col])
                     output_df.loc[col] = ['r', np.sign(r), abs(round(r, 3)), round(p, 6)]
+                    scatter(df[col], df[label])
                 else:
                     F, p = avnova(df[[col, label]], col, label)
                     output_df.loc[col] = ['F', '', round(F, 3), round(p, 6)]
+                    bar_chart(df, col, label)
             else:
                 output_df.loc[col] = [np.nan, np.nan, np.nan, 'nulls']
 
